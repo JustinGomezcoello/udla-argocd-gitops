@@ -16,6 +16,13 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: streetwear-lab
+  # El HPA es quien administra spec.replicas en tiempo de ejecución.
+  # Sin esta exclusión, Argo CD revertiría cada escalado del HPA (bucle de reconciliación).
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: true
