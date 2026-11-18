@@ -1,31 +1,23 @@
-# Build stage
-FROM node:18-alpine as build
+# ---------- Etapa 1: build de la aplicación React ----------
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
+# Dependencias primero para aprovechar la caché de capas
 COPY package*.json ./
+RUN npm install --legacy-peer-deps --no-audit --no-fund
 
-# Install dependencies with legacy peer deps
-RUN npm install --legacy-peer-deps
-
-# Copy source code
+# Código fuente y compilación de producción
 COPY . .
-
-# Build the application
+ENV CI=false
 RUN npm run build
 
-# Production stage
+# ---------- Etapa 2: servidor estático nginx ----------
 FROM nginx:alpine
 
-# Copy built assets from build stage
 COPY --from=build /app/build /usr/share/nginx/html
-
-# Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port
 EXPOSE 80
 
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
