@@ -84,6 +84,16 @@ udla-argocd-gitops/
 └── README.md
 ```
 
+### Recursos declarados
+
+| Recurso | Configuración |
+|---|---|
+| Deployment | 2 réplicas, imagen `udla-web:1.0`, puerto 80 |
+| requests | CPU `100m`, memoria `128Mi` |
+| limits | CPU `500m`, memoria `320Mi` |
+| Service | `NodePort`, puerto 80 → targetPort 80, nodePort 30080 |
+| HPA | mínimo 2, máximo 5, objetivo de CPU 50 % |
+
 ## 5. Requisitos
 
 | Herramienta | Versión usada |
@@ -99,12 +109,13 @@ agrega varios Pods al clúster.
 
 ## 6. Construcción de la imagen
 
-La imagen se construye y se carga directamente en el runtime del clúster local, sin
-necesidad de un registro externo:
+La imagen se construye en el equipo y se carga en el runtime del clúster local
+(containerd), sin necesidad de un registro externo:
 
 ```bash
-minikube image build -t udla-web:1.0 -f app/Dockerfile app
-minikube image ls | grep udla-web
+docker build -t udla-web:1.0 -f app/Dockerfile app
+minikube image load udla-web:1.0
+minikube image ls | findstr udla-web
 ```
 
 El Deployment usa `imagePullPolicy: IfNotPresent` para tomar esa imagen local.
@@ -145,6 +156,25 @@ La `Application` declara:
 - `syncPolicy.automated` con `prune` y `selfHeal` → sincronización automática y
   corrección de desviaciones manuales.
 
+### Nota: Argo CD y el HPA sobre `spec.replicas`
+
+El HPA modifica `spec.replicas` del Deployment en tiempo de ejecución. Si Argo CD
+considerara ese campo, revertiría cada escalado del HPA y se produciría un bucle de
+reconciliación (Argo pone 2, el HPA pone 5, Argo vuelve a 2…). Por eso la
+`Application` excluye ese campo:
+
+```yaml
+ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+      - /spec/replicas
+```
+
+Con esta exclusión, Argo CD administra la plantilla del Deployment (imagen, recursos,
+sondas, etiquetas) y el HPA administra el número de réplicas. Es la práctica
+recomendada cuando ambos controladores conviven.
+
 ## 9. Verificación en el clúster
 
 ```bash
@@ -158,20 +188,37 @@ minikube service streetwear-web -n streetwear-lab
 
 ## 10. Demostración del flujo GitOps
 
-1. Editar `k8s/deployment.yml` y cambiar `replicas: 2` por `replicas: 3`.
+1. Editar un campo de la plantilla en `k8s/deployment.yml`, por ejemplo
+   `limits.memory: 256Mi → 320Mi`.
 2. Hacer `git commit` y `git push` a `main`.
-3. En Argo CD, la aplicación pasa de `Synced` a `OutOfSync` y ejecuta la
-   sincronización automática.
-4. `kubectl get pods -n streetwear-lab` muestra tres Pods sin haber usado `kubectl apply`.
+3. En Argo CD, la aplicación pasa a `OutOfSync` y ejecuta la sincronización
+   automática: crea un nuevo ReplicaSet y reemplaza los Pods.
+4. `kubectl get pods -n streetwear-lab` muestra los Pods nuevos sin haber usado
+   `kubectl apply`.
 
 También se puede verificar la **autorreparación** (`selfHeal`): si se elimina un
-objeto del clúster con `kubectl delete`, Argo CD lo vuelve a crear para volver al
-estado declarado en Git.
+objeto del clúster con `kubectl delete` (por ejemplo el Service), Argo CD lo vuelve a
+crear para restablecer el estado declarado en Git.
 
 ## 11. Evidencias
 
-Las capturas del proceso están en la carpeta [`evidencias/`](evidencias) y se
-describen en el informe de la actividad.
+| # | Archivo | Qué demuestra |
+|---|---|---|
+| 01 | `01-argocd-instalado.png` | Argo CD instalado y aplicación registrada (`Synced`) |
+| 02 | `02-argocd-ui-sincronizado.jpeg` | Interfaz de Argo CD: `Healthy`, `Synced`, auto-sync activo |
+| 03 | `03-deployment-replicaset-pods.png` | Deployment 2/2, ReplicaSet y Pods |
+| 04 | `04-service-nodeport.png` | Service NodePort 30080, selector y endpoints |
+| 05 | `05-aplicacion-en-navegador.jpeg` | Aplicación web accesible desde el navegador |
+| 06 | `06-metricas-pods.png` | Métricas de CPU y memoria (`kubectl top`) |
+| 07 | `07-hpa-configurado.png` | HPA: mínimo 2, máximo 5, objetivo 50 % |
+| 08 | `08-cambio-en-el-repositorio.jpeg` | Commit del cambio en `main` |
+| 09 | `09-sincronizacion-automatica.png` | Sincronización automática y nuevo ReplicaSet |
+| 10 | `10-escalado-a-5-replicas.png` | Escalado automático 2 → 5 con carga (482 % de CPU) |
+| 11 | `11-reduccion-a-2-replicas.png` | Reducción automática a 2 réplicas |
+| 12 | `12-eliminacion-manual-del-service.png` | Eliminación manual del Service |
+| 13 | `13-autorreparacion-selfheal.png` | Argo CD recrea el Service (selfHeal) |
+
+Las capturas se describen en detalle en el informe de la actividad.
 
 ## 12. Conclusiones
 

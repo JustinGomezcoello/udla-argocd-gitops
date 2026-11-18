@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Automatización de la configuración continua – Argo CD y Kubernetes</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Calibri", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1c1c1c;
+    margin: 0;
+  }
+  h1, h2, h3, h4 { font-family: "Segoe UI Semibold", "Calibri", Arial, sans-serif; color: #10243d; }
+  h1 { font-size: 20pt; margin: 0 0 4px 0; }
+  h2 {
+    font-size: 14pt;
+    margin: 26px 0 10px 0;
+    padding-bottom: 5px;
+    border-bottom: 2px solid #e2a908;
+  }
+  h3 { font-size: 11.5pt; margin: 18px 0 6px 0; color: #23405f; }
+  p { margin: 0 0 9px 0; text-align: justify; }
+  ul, ol { margin: 0 0 10px 0; padding-left: 22px; }
+  li { margin-bottom: 3px; }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9pt;
+    background: #f1f3f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #b3261e;
+  }
+  pre {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.6pt;
+    line-height: 1.35;
+    background: #0d2440;
+    color: #e8eef6;
+    padding: 10px 12px;
+    border-radius: 5px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    margin: 8px 0 12px 0;
+  }
+  pre code { background: none; color: inherit; font-size: inherit; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px 0; font-size: 9.5pt; }
+  th, td { border: 1px solid #c9d2dc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #eef2f6; font-weight: 600; }
+  .cover {
+    text-align: center;
+    padding: 40px 24px 30px 24px;
+    border: 1px solid #d7dee6;
+    border-top: 8px solid #e2a908;
+    margin-bottom: 26px;
+  }
+  .cover .univ { font-size: 11pt; letter-spacing: 2px; font-weight: 600; color: #23405f; }
+  .cover .sub { font-size: 10pt; color: #555; margin-top: 2px; }
+  .cover h1 { margin-top: 26px; }
+  .cover .materia { font-size: 11pt; color: #333; margin-top: 8px; }
+  .cover .meta { margin-top: 26px; font-size: 9.5pt; color: #333; line-height: 1.8; }
+  .cover .repo { margin-top: 18px; font-size: 9pt; }
+  .kpi { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px 0; }
+  .kpi div {
+    flex: 1 1 30%;
+    border: 1px solid #d7dee6;
+    border-left: 3px solid #e2a908;
+    padding: 8px 10px;
+    font-size: 9pt;
+    background: #fbfcfd;
+  }
+  .kpi b { display: block; font-size: 12.5pt; color: #10243d; }
+  figure { margin: 14px 0 20px 0; page-break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid #cfd8e3; border-radius: 4px; display: block; }
+  figcaption { font-size: 8.8pt; color: #4a4a4a; margin-top: 6px; line-height: 1.4; }
+  .note {
+    background: #fff8e6;
+    border-left: 4px solid #e2a908;
+    padding: 9px 12px;
+    margin: 12px 0;
+    font-size: 9.6pt;
+  }
+  .pagebreak { page-break-before: always; }
+  .toc { font-size: 10pt; }
+  .toc li { margin-bottom: 2px; }
+  footer { margin-top: 30px; font-size: 8.5pt; color: #777; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="univ">UNIVERSIDAD DE LAS AMÉRICAS</div>
+  <div class="sub">Facultad de Ingeniería y Ciencias Aplicadas</div>
+  <h1>Automatización de la configuración continua</h1>
+  <div class="materia">Despliegue de una aplicación web con Argo CD y Kubernetes (GitOps)</div>
+  <div class="meta">
+    <b>Estudiante:</b> Justin Gomezcoello<br />
+    <b>Asignatura:</b> Procesos de Software — ISWZ3205<br />
+    <b>Actividad:</b> Automatización de la configuración continua 10 % P2<br />
+    <b>Modalidad:</b> Individual<br />
+    <b>Fecha:</b> 18 de noviembre de 2026
+  </div>
+  <div class="repo">Repositorio: https://github.com/JustinGomezcoello/udla-argocd-gitops</div>
+</div>
+
+<h2>1. Resumen ejecutivo</h2>
+<p>
+Se implementó un flujo de entrega continua basado en <b>GitOps</b> sobre un clúster local de
+Kubernetes (Minikube con controlador Docker). La aplicación desplegada es una tienda web
+(<i>streetwear</i>) desarrollada previamente en React 18 y servida por nginx, empaquetada en una
+imagen propia. El repositorio Git actúa como única fuente de verdad y <b>Argo CD</b> reconcilia de
+forma automática el estado declarado en la carpeta <code>k8s/</code> con el estado real del clúster.
+</p>
+<p>
+El despliegue incluye un <b>Deployment</b> con dos réplicas, un <b>Service NodePort</b>, un
+<b>Horizontal Pod Autoscaler</b> entre 2 y 5 réplicas con objetivo de CPU del 50 % y
+<b>Metrics Server</b> como proveedor de métricas. Se verificó el escalamiento real de 2 a 5 Pods
+bajo carga y el retorno automático a 2, además de la sincronización automática de un cambio hecho
+únicamente en Git y de la autorreparación de un objeto eliminado manualmente.
+</p>
+
+<div class="kpi">
+  <div><b>Synced / Healthy</b> Estado de la aplicación en Argo CD</div>
+  <div><b>2 → 4 → 5</b> Escalado observado bajo carga</div>
+  <div><b>5 → 3 → 2</b> Reducción automática</div>
+  <div><b>0 comandos</b> <code>kubectl apply</code> para sincronizar</div>
+  <div><b>50 %</b> Objetivo de utilización de CPU</div>
+  <div><b>30080</b> NodePort de acceso a la aplicación</div>
+</div>
+
+<table>
+  <tr><th>Indicador</th><th>Resultado comprobado</th></tr>
+  <tr><td>Aplicación desplegada</td><td>Tienda React servida por nginx (imagen <code>udla-web:1.0</code>)</td></tr>
+  <tr><td>Herramienta GitOps</td><td>Argo CD v3.6.1, <code>Automated Sync</code> con <code>prune</code> y <code>selfHeal</code></td></tr>
+  <tr><td>Deployment inicial</td><td>2 réplicas disponibles (2/2)</td></tr>
+  <tr><td>Escalado máximo observado</td><td>5 réplicas disponibles (5/5)</td></tr>
+  <tr><td>Reducción automática</td><td>De 5 a 2 réplicas</td></tr>
+  <tr><td>Sincronización automática</td><td>Cambio en Git aplicado sin <code>kubectl apply</code> (nuevo ReplicaSet)</td></tr>
+  <tr><td>Autorreparación</td><td>Service eliminado y recreado por Argo CD</td></tr>
+  <tr><td>Acceso web</td><td>Service NodePort <code>80:30080</code> y túnel de Minikube</td></tr>
+  <tr><td>Entrega</td><td>Repositorio público, manifiestos, evidencias numeradas e informe</td></tr>
+</table>
+
+<h2>2. Objetivos y alcance</h2>
+<h3>2.1 Objetivo general</h3>
+<p>
+Automatizar el despliegue de una aplicación web en Kubernetes mediante Argo CD, utilizando un
+repositorio Git como fuente de verdad, con los recursos Deployment, Service y Horizontal Pod
+Autoscaler, y demostrar la sincronización automática ante cambios en el repositorio.
+</p>
+
+<h3>2.2 Objetivos específicos</h3>
+<ul>
+  <li>Empaquetar una aplicación web propia en una imagen Docker y cargarla en el clúster.</li>
+  <li>Declarar de forma declarativa un Deployment con 2 réplicas, etiquetas, selectores, solicitudes y límites de CPU y memoria.</li>
+  <li>Exponer la aplicación mediante un Service de tipo NodePort y validar el acceso desde el navegador.</li>
+  <li>Configurar un HPA entre 2 y 5 réplicas con objetivo de CPU del 50 % y comprobar el escalamiento con Metrics Server.</li>
+  <li>Instalar Argo CD, registrar la aplicación y habilitar la sincronización automática.</li>
+  <li>Demostrar que un cambio en Git se aplica solo, y que un objeto eliminado se recrea (selfHeal).</li>
+</ul>
+
+<h3>2.3 Alcance y criterios de éxito</h3>
+<p>
+El alcance es una prueba local de aprendizaje: no contempla un clúster multinodo, TLS corporativo,
+persistencia compartida ni un registro de imágenes privado. Se considera exitoso cuando la
+aplicación está disponible (2/2), el HPA opera entre 2 y 5 réplicas con objetivo del 50 %, Argo CD
+muestra la aplicación como <i>Synced / Healthy</i>, un cambio hecho únicamente en el repositorio se
+refleja en el clúster sin intervención manual y un recurso eliminado se restablece automáticamente.
+</p>
+
+<h2>3. Fundamentos tecnológicos</h2>
+<table>
+  <tr><th>Concepto</th><th>Descripción aplicada en el trabajo</th></tr>
+  <tr>
+    <td><b>GitOps</b></td>
+    <td>Modelo de operación en el que el repositorio Git describe el estado deseado y un agente
+    (Argo CD) lo aplica y lo mantiene de forma continua.</td>
+  </tr>
+  <tr>
+    <td><b>Argo CD</b></td>
+    <td>Controlador de entrega continua para Kubernetes. Compara el estado del repositorio con el
+    del clúster y ejecuta la sincronización; detecta desviaciones y las corrige.</td>
+  </tr>
+  <tr>
+    <td><b>Deployment</b></td>
+    <td>Controlador declarativo que administra un ReplicaSet y la plantilla de los Pods. Declara
+    réplicas, imagen, recursos y sondas.</td>
+  </tr>
+  <tr>
+    <td><b>ReplicaSet</b></td>
+    <td>Mantiene el número de Pods indicado. Al cambiar la plantilla, el Deployment crea un
+    ReplicaSet nuevo y retira el anterior (RollingUpdate).</td>
+  </tr>
+  <tr>
+    <td><b>Service NodePort</b></td>
+    <td>Punto de acceso estable: selecciona Pods por etiqueta y publica un puerto del nodo
+    (30080) hacia el puerto del contenedor (80).</td>
+  </tr>
+  <tr>
+    <td><b>Metrics Server / HPA</b></td>
+    <td>Metrics Server expone el consumo de CPU y memoria; el HPA compara ese consumo con la
+    solicitud de CPU del Pod y ajusta las réplicas dentro del rango permitido.</td>
+  </tr>
+  <tr>
+    <td><b>Minikube</b></td>
+    <td>Clúster Kubernetes de un solo nodo sobre Docker Desktop, con runtime containerd.</td>
+  </tr>
+</table>
+
+<h2>4. Arquitectura y diseño de la solución</h2>
+<p>
+El flujo tiene tres planos: el desarrollador publica cambios en GitHub; Argo CD, que corre dentro
+del clúster, compara el repositorio con el estado real; y los controladores de Kubernetes crean o
+ajustan los objetos. El navegador del usuario consume la aplicación a través del Service NodePort.
+</p>
+
+<pre><code> Desarrollador
+      │  git push
+      ▼
+ ┌──────────────────────────────┐
+ │ GitHub (fuente de verdad)    │   k8s/deployment.yml
+ │                              │   k8s/service.yml
+ │                              │   k8s/hpa.yml
+ └──────────────┬───────────────┘
+                │ reconciliación automática
+                ▼
+        ┌───────────────┐
+        │   Argo CD     │   OutOfSync → Synced
+        └───────┬───────┘
+                │ aplica el estado declarado
+                ▼
+ ┌────────────────────────────────────────────┐
+ │ Kubernetes (Minikube) — streetwear-lab     │
+ │                                            │
+ │  Service NodePort 30080 ──► Deployment     │
+ │                              ├─ Pod 1      │
+ │                              ├─ Pod 2      │
+ │                              └─ … hasta 5  │
+ │                                            │
+ │  HPA: 2 → 5 réplicas, CPU 50 %             │
+ │  Metrics Server: métricas de CPU           │
+ └────────────────────────────────────────────┘</code></pre>
+
+<table>
+  <tr><th>Elemento</th><th>Configuración aplicada</th><th>Función</th></tr>
+  <tr><td>Namespace</td><td><code>streetwear-lab</code></td><td>Aislar los recursos de la actividad</td></tr>
+  <tr><td>Deployment</td><td><code>streetwear-web</code>, 2 réplicas iniciales</td><td>Declarar la plantilla y el número de Pods</td></tr>
+  <tr><td>Imagen</td><td><code>udla-web:1.0</code> (React + nginx)</td><td>Artefacto propio de la aplicación</td></tr>
+  <tr><td>Service</td><td>NodePort, puerto 80 → 80, nodePort 30080</td><td>Acceso externo a la aplicación</td></tr>
+  <tr><td>HPA</td><td>mínimo 2, máximo 5, CPU 50 %</td><td>Escalamiento horizontal automático</td></tr>
+  <tr><td>CPU solicitada</td><td><code>100m</code></td><td>Base del cálculo de utilización del HPA</td></tr>
+  <tr><td>Memoria solicitada</td><td><code>128Mi</code></td><td>Reserva para planificación</td></tr>
+  <tr><td>Límites</td><td><code>500m</code> CPU / <code>320Mi</code> memoria</td><td>Tope de consumo por Pod</td></tr>
+  <tr><td>Estrategia</td><td>RollingUpdate (maxUnavailable 0)</td><td>Actualizar sin cortar el servicio</td></tr>
+  <tr><td>Sincronización</td><td>Automated (prune + selfHeal)</td><td>Aplicar y corregir el estado desde Git</td></tr>
+</table>
+
+<h2>5. Preparación del entorno</h2>
+<p>
+Se utilizó Windows con Docker Desktop. El clúster se creó con Minikube usando el controlador
+Docker, con 4 CPU y 6 GB de memoria para alojar Argo CD junto con la aplicación. El runtime del
+nodo es containerd, por lo que la imagen se construyó en el equipo y se cargó al clúster con
+<code>minikube image load</code>.
+</p>
+<table>
+  <tr><th>Herramienta</th><th>Versión observada</th></tr>
+  <tr><td>Docker Desktop</td><td>29.6.2</td></tr>
+  <tr><td>Minikube</td><td>v1.39.0</td></tr>
+  <tr><td>kubectl (cliente)</td><td>v1.36.1</td></tr>
+  <tr><td>Kubernetes</td><td>v1.37.0 (containerd 2.3.4)</td></tr>
+  <tr><td>Argo CD</td><td>v3.6.1 (manifiestos <code>stable</code>)</td></tr>
+</table>
+
+<pre><code>minikube start --driver=docker --cpus=4 --memory=6144
+minikube addons enable metrics-server
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml</code></pre>
+
+<h2>6. Implementación</h2>
+<h3>6.1 Organización del repositorio</h3>
+<pre><code>udla-argocd-gitops/
+├── app/                     # aplicación (React + nginx) y su Dockerfile
+├── k8s/
+│   ├── deployment.yml       # 2 réplicas, recursos, sondas, puerto 80
+│   ├── service.yml          # NodePort 80 → 80 (30080)
+│   └── hpa.yml              # 2–5 réplicas, CPU 50 %
+├── argocd/
+│   └── application.yml      # Application con Automated Sync
+├── evidencias/              # 13 capturas numeradas
+└── README.md</code></pre>
+
+<h3>6.2 Construcción de la imagen</h3>
+<p>
+La aplicación se empaquetó con un <code>Dockerfile</code> de dos etapas: compilación de React con
+<code>node:20-alpine</code> y publicación de los archivos estáticos con <code>nginx:alpine</code>.
+El servidor nginx incluye la regla <code>try_files</code> necesaria para una aplicación de una sola
+página y una ruta <code>/healthz</code> para las sondas.
+</p>
+<pre><code>docker build -t udla-web:1.0 -f app/Dockerfile app
+minikube image load udla-web:1.0
+minikube image ls | findstr udla-web</code></pre>
+
+<h3>6.3 Deployment</h3>
+<p>
+El manifiesto declara <code>replicas: 2</code>, etiquetas coherentes entre
+<code>selector.matchLabels</code> y <code>template.metadata.labels</code>
+(<code>app: streetwear-web</code>), la imagen propia con <code>imagePullPolicy: IfNotPresent</code>
+y el puerto 80 del contenedor. Se definieron <code>requests</code> (100m / 128Mi) para que el HPA
+tenga una base de cálculo y <code>limits</code> (500m / 320Mi) como tope. Las sondas
+<i>startup</i>, <i>readiness</i> y <i>liveness</i> controlan cuándo el Pod recibe tráfico y cuándo
+debe reiniciarse.
+</p>
+
+<h3>6.4 Service y HPA</h3>
+<p>
+El Service es de tipo <code>NodePort</code>, con <code>port: 80</code>, <code>targetPort: 80</code>
+y <code>nodePort: 30080</code>; su selector <code>app: streetwear-web</code> coincide con las
+etiquetas de los Pods. El HPA usa <code>autoscaling/v2</code>, apunta al Deployment
+<code>streetwear-web</code> y fija <code>minReplicas: 2</code>, <code>maxReplicas: 5</code> y
+<code>averageUtilization: 50</code> sobre CPU, con políticas de escalado para evitar cambios
+bruscos.
+</p>
+
+<h3>6.5 Integración con Argo CD</h3>
+<p>
+Se creó la <code>Application</code> <code>streetwear-web</code> apuntando al repositorio público, a
+la rama <code>main</code> y a la ruta <code>k8s</code>, con <code>syncPolicy.automated</code>
+(<code>prune</code> y <code>selfHeal</code>) y <code>CreateNamespace=true</code>. La aplicación se
+registró con un único <code>kubectl apply -f argocd/application.yml</code>; a partir de ahí Argo CD
+creó el Deployment, el Service y el HPA.
+</p>
+<div class="note">
+<b>Decisión de diseño:</b> la <code>Application</code> excluye <code>/spec/replicas</code> mediante
+<code>ignoreDifferences</code>. De lo contrario, Argo CD revertiría cada escalado del HPA y se
+produciría un bucle de reconciliación. Con esta exclusión, Argo CD administra la plantilla
+(imagen, recursos, sondas) y el HPA administra el número de réplicas.
+</div>
+
+<h2>7. Pruebas y resultados con evidencias</h2>
+
+<h3>7.1 Instalación de Argo CD y registro de la aplicación</h3>
+<p>
+Los siete Pods de Argo CD quedaron en estado <i>Running</i> y la aplicación se registró
+correctamente. La primera conciliación creó los tres recursos en el namespace
+<code>streetwear-lab</code>.
+</p>
+<figure>
+  <img src="../evidencias/01-argocd-instalado.png" alt="Argo CD instalado" />
+  <figcaption><b>Figura 1.</b> Argo CD instalado (siete Pods <i>Running</i>) y aplicación
+  <code>streetwear-web</code> en estado <i>Synced / Healthy</i>.</figcaption>
+</figure>
+
+<figure>
+  <img src="../evidencias/02-argocd-ui-sincronizado.jpeg" alt="Interfaz de Argo CD" />
+  <figcaption><b>Figura 2.</b> Interfaz de Argo CD: la aplicación está <i>Healthy</i> y
+  <i>Synced</i>, con <i>Auto sync</i> habilitado. El árbol muestra el Service, el Deployment y el
+  HPA administrados.</figcaption>
+</figure>
+
+<h3>7.2 Deployment, ReplicaSet y Pods</h3>
+<p>
+El Deployment alcanzó <code>READY 2/2</code> y el ReplicaSet activo mantuvo dos Pods en estado
+1/1 <i>Running</i> sin reinicios. Cada Pod recibió su propia dirección IP interna.
+</p>
+<figure>
+  <img src="../evidencias/03-deployment-replicaset-pods.png" alt="Deployment 2/2" />
+  <figcaption><b>Figura 3.</b> Deployment 2/2, ReplicaSet con 2 réplicas deseadas y dos Pods
+  <i>Running</i> (Figura 3 del conjunto de evidencias).</figcaption>
+</figure>
+
+<h3>7.3 Service NodePort y acceso web</h3>
+<p>
+El Service quedó con IP interna <code>10.108.175.176</code> y publicó el puerto
+<code>80:30080/TCP</code>. Sus <i>endpoints</i> corresponden a las IP de los dos Pods, lo que
+confirma que el selector está bien asociado. El acceso se realizó mediante el túnel de Minikube,
+que publica el NodePort en un puerto local.
+</p>
+<figure>
+  <img src="../evidencias/04-service-nodeport.png" alt="Service NodePort" />
+  <figcaption><b>Figura 4.</b> Service de tipo NodePort con selector <code>app=streetwear-web</code>,
+  <code>targetPort: 80</code> y <code>nodePort: 30080</code>, con dos endpoints activos.</figcaption>
+</figure>
+
+<figure>
+  <img src="../evidencias/05-aplicacion-en-navegador.jpeg" alt="Aplicación en el navegador" />
+  <figcaption><b>Figura 5.</b> Aplicación web operativa en el navegador: catálogo, filtros por
+  categoría y precio, servida por los Pods del clúster.</figcaption>
+</figure>
+
+<h3>7.4 Métricas y configuración del HPA</h3>
+<p>
+Con Metrics Server habilitado se obtuvieron las métricas de los Pods
+(<code>kubectl top pods</code>). El HPA reportó <code>cpu: 1%/50%</code>, confirmando que puede
+calcular la utilización respecto de la solicitud de 100m por Pod. El valor se interpreta sobre la
+<i>request</i>, no sobre la capacidad total del procesador.
+</p>
+<figure>
+  <img src="../evidencias/06-metricas-pods.png" alt="Métricas de los Pods" />
+  <figcaption><b>Figura 6.</b> Métricas de CPU y memoria por Pod y por nodo obtenidas de
+  Metrics Server.</figcaption>
+</figure>
+
+<figure>
+  <img src="../evidencias/07-hpa-configurado.png" alt="HPA configurado" />
+  <figcaption><b>Figura 7.</b> HPA con objetivo de CPU del 50 %, mínimo 2 y máximo 5 réplicas, y
+  detalle de la referencia al Deployment.</figcaption>
+</figure>
+
+<h3>7.5 Sincronización automática desde Git (GitOps)</h3>
+<p>
+Para comprobar que el repositorio es la fuente de verdad se modificó únicamente el manifiesto
+<code>k8s/deployment.yml</code> en Git (el límite de memoria pasó de 256Mi a 320Mi) y se publicó en
+la rama <code>main</code>. No se ejecutó ningún <code>kubectl apply</code>.
+</p>
+<figure>
+  <img src="../evidencias/08-cambio-en-el-repositorio.jpeg" alt="Commit en GitHub" />
+  <figcaption><b>Figura 8.</b> Commit publicado directamente en <code>main</code> del repositorio
+  <code>udla-argocd-gitops</code>.</figcaption>
+</figure>
+<p>
+Argo CD detectó la diferencia, aplicó el manifiesto y el Deployment generó un nuevo ReplicaSet
+(<code>7c6bf9c645</code>) que reemplazó a los Pods anteriores sin intervención manual. La
+aplicación permaneció <i>Synced / Healthy</i>.
+</p>
+<figure>
+  <img src="../evidencias/09-sincronizacion-automatica.png" alt="Sincronización automática" />
+  <figcaption><b>Figura 9.</b> Tras el <i>push</i>, Argo CD sincronizó solo: el ReplicaSet anterior
+  quedó en 0 y el nuevo quedó en 2/2 con Pods nuevos.</figcaption>
+</figure>
+
+<h3>7.6 Escalado automático de 2 a 5 réplicas</h3>
+<p>
+Se generó carga con un Pod temporal que ejecutó <code>ab</code> (400 conexiones concurrentes)
+contra el Service. El consumo subió a cerca de <b>482 %</b> de la solicitud de CPU y el HPA escaló
+en dos pasos: 2 → 4 → 5 réplicas. El Deployment llegó a <code>5/5</code> con cinco Pods
+<i>Running</i>.
+</p>
+<figure>
+  <img src="../evidencias/10-escalado-a-5-replicas.png" alt="Escalado a 5 réplicas" />
+  <figcaption><b>Figura 10.</b> Escalado automático: CPU al 482 % del objetivo, cinco réplicas y
+  cinco Pods disponibles, con el detalle de consumo por Pod.</figcaption>
+</figure>
+
+<h3>7.7 Reducción automática al retirar la carga</h3>
+<p>
+Al eliminar el generador de carga el consumo volvió a ~1 % y el HPA redujo las réplicas de 5 a 2,
+respetando la ventana de estabilización configurada para el descenso.
+</p>
+<figure>
+  <img src="../evidencias/11-reduccion-a-2-replicas.png" alt="Reducción a 2 réplicas" />
+  <figcaption><b>Figura 11.</b> Retorno a 2 réplicas: CPU en 1 %/50 %, Deployment 2/2 y únicamente
+  dos Pods activos.</figcaption>
+</figure>
+
+<h3>7.8 Autorreparación (selfHeal)</h3>
+<p>
+Como prueba de la reconciliación se eliminó manualmente el Service con <code>kubectl delete</code>.
+Argo CD detectó la ausencia del objeto y lo recreó a partir del manifiesto del repositorio, sin
+intervención humana. El Service recreado conservó el tipo NodePort y el puerto 30080.
+</p>
+<figure>
+  <img src="../evidencias/12-eliminacion-manual-del-service.png" alt="Service eliminado" />
+  <figcaption><b>Figura 12.</b> Eliminación manual del Service: el namespace queda sin el recurso
+  (<i>No resources found</i>).</figcaption>
+</figure>
+
+<figure>
+  <img src="../evidencias/13-autorreparacion-selfheal.png" alt="SelfHeal" />
+  <figcaption><b>Figura 13.</b> Argo CD recreó el Service: su antigüedad es de segundos frente a los
+  33 minutos del Deployment, y la aplicación vuelve a <i>Synced / Healthy</i>.</figcaption>
+</figure>
+
+<h2>8. Incidencias y acciones correctivas</h2>
+
+<h3>8.1 Fallo de <code>npm install</code> durante la construcción</h3>
+<p>
+La primera versión del <code>Dockerfile</code> usaba <code>node:18-alpine</code> y el
+<code>npm install</code> terminaba con código 1 sin mensaje claro; el registro era accesible desde
+el contenedor (<code>npm ping</code> fallaba, <code>wget</code> al registro funcionaba). Se verificó
+que <code>node:20-alpine</code> funcionaba correctamente en el mismo entorno y se actualizó la etapa
+de compilación. La imagen final compiló sin errores.
+</p>
+
+<h3>8.2 CRD demasiado grande al instalar Argo CD</h3>
+<p>
+La instalación con <code>kubectl apply</code> falló con
+<i>"The CustomResourceDefinition applicationsets.argoproj.io is invalid: metadata.annotations: Too
+long"</i>, porque la anotación de <i>last-applied-configuration</i> supera el límite de 256 KB. Se
+resolvió usando <b>Server-Side Apply</b>
+(<code>kubectl apply --server-side --force-conflicts</code>). Un segundo intento fue necesario
+porque dos <i>NetworkPolicies</i> no se crearon por un <i>timeout</i> transitorio de etcd.
+</p>
+
+<h3>8.3 Conflicto entre Argo CD y el HPA por <code>spec.replicas</code></h3>
+<p>
+Si Argo CD administra <code>spec.replicas</code> mientras el HPA también lo modifica, cada escalado
+del HPA se revierte en la siguiente reconciliación y se entra en un bucle. Se añadió
+<code>ignoreDifferences</code> para <code>/spec/replicas</code> del Deployment; así Argo CD sigue
+detectando cambios en el resto de la plantilla y el HPA conserva la autoridad sobre el número de
+réplicas. Esta decisión quedó documentada en el repositorio.
+</p>
+
+<h3>8.4 Acceso a la interfaz de Argo CD en el laboratorio</h3>
+<p>
+El servidor de Argo CD publica HTTPS con un certificado autofirmado. Para revisar la interfaz desde
+el equipo local se agregó el argumento <code>--insecure</code> al Deployment del servidor y se
+expuso con <code>kubectl port-forward</code>. Es un ajuste exclusivo del laboratorio: en un entorno
+real se mantiene TLS con un certificado válido.
+</p>
+
+<h3>8.5 NodePort no accesible directamente desde el host</h3>
+<p>
+Con el controlador Docker de Minikube en Windows, la IP del nodo no es alcanzable desde el host. El
+acceso se realizó con <code>minikube service</code>, que abre un túnel local hacia el NodePort,
+manteniendo el Service publicado en el puerto 30080 dentro del clúster.
+</p>
+
+<h2>9. Conclusiones</h2>
+<p>
+El trabajo demuestra el cambio de modelo que propone GitOps: el clúster deja de configurarse con
+comandos manuales y pasa a reconciliarse de forma continua contra un repositorio. Argo CD aplicó los
+tres manifiestos en la primera sincronización, detectó posteriormente un cambio hecho únicamente en
+Git y lo reflejó creando un nuevo ReplicaSet, y recreó un Service eliminado sin intervención humana.
+</p>
+<p>
+La verificación del escalamiento mostró que el HPA requiere una solicitud de CPU bien definida y
+Metrics Server operativo: con 100m solicitados, el objetivo del 50 % equivale a 50m por Pod, por lo
+que la carga de prueba elevó la utilización muy por encima de la meta y provocó el crecimiento de 2 a
+5 réplicas, con retorno posterior a 2 al desaparecer la carga.
+</p>
+<p>
+También quedó evidenciado un aspecto de diseño relevante: cuando conviven un HPA y una herramienta
+GitOps, es necesario excluir <code>spec.replicas</code> de la comparación, de lo contrario ambos
+controladores se contradicen. Documentar estas decisiones es parte del valor del repositorio como
+fuente de verdad.
+</p>
+
+<h2>10. Repositorio</h2>
+<p>
+El código, los manifiestos y las evidencias están publicados en un repositorio público de GitHub,
+rama <code>main</code>, con los archivos <code>k8s/deployment.yml</code>,
+<code>k8s/service.yml</code>, <code>k8s/hpa.yml</code>, <code>argocd/application.yml</code>,
+<code>app/Dockerfile</code>, la carpeta <code>evidencias/</code> y el <code>README.md</code> con el
+procedimiento completo.
+</p>
+<pre><code>https://github.com/JustinGomezcoello/udla-argocd-gitops</code></pre>
+
+<footer>
+  Universidad de las Américas · Procesos de Software · Automatización de la configuración continua 10 % P2
+</footer>
+
+</body>
+</html>
