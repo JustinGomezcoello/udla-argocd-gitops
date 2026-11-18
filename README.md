@@ -202,6 +202,9 @@ crear para restablecer el estado declarado en Git.
 
 ## 11. Evidencias
 
+27 capturas del entorno real, numeradas en orden de captura. Todas se usan en el
+informe (`informe/informe.pdf`) con su número de figura.
+
 | # | Archivo | Qué demuestra |
 |---|---|---|
 | 01 | `01-argocd-instalado.png` | Argo CD instalado y aplicación registrada (`Synced`) |
@@ -217,8 +220,45 @@ crear para restablecer el estado declarado en Git.
 | 11 | `11-reduccion-a-2-replicas.png` | Reducción automática a 2 réplicas |
 | 12 | `12-eliminacion-manual-del-service.png` | Eliminación manual del Service |
 | 13 | `13-autorreparacion-selfheal.png` | Argo CD recrea el Service (selfHeal) |
+| 14 | `14-entorno-nodo-y-versiones.png` | Versiones de minikube/kubectl y nodo `Ready` |
+| 15 | `15-metrics-server.png` | Metrics Server habilitado y `kubectl top nodes` |
+| 16 | `16-imagen-docker.png` | Imagen `udla-web:1.0` en el host y en el clúster |
+| 17 | `17-estructura-repositorio.png` | Archivos versionados, ramas e historial |
+| 18 | `18-namespace-y-recursos.png` | Namespace `streetwear-lab` y `kubectl get all` |
+| 19 | `19-describe-deployment.png` | Etiquetas, réplicas, límites, requests y sondas |
+| 20 | `20-historial-de-rollout.png` | Revisiones del Deployment y ReplicaSets |
+| 21 | `21-logs-y-healthz.png` | Sondas en los logs y `/healthz` respondiendo `ok` |
+| 22 | `22-selector-y-endpoints.png` | Selector del Service ↔ etiquetas de los Pods |
+| 23 | `23-aplicacion-de-argocd.png` | `repoURL`, `path`, `targetRevision`, `prune` y `selfHeal` |
+| 24 | `24-argo-ui-arbol-de-recursos.jpeg` | Árbol de recursos en Argo CD (`Synced`) |
+| 25 | `25-argo-ui-historial.jpeg` | Historial sincronizado por *automated sync policy* |
+| 26 | `26-eventos-del-hpa.png` | Estado y condiciones del HPA |
+| 27 | `27-estado-final.png` | Estado final del despliegue |
 
-Las capturas se describen en detalle en el informe de la actividad.
+## 11.1 Guía de ejecución desde cero
+
+El informe incluye el **Anexo A**, una guía paso a paso (prerrequisitos → clúster →
+Metrics Server → imagen → manifests → Argo CD → `Application` → verificación de cada
+punto → limpieza) con los comandos exactos y qué debe observarse en cada paso, además
+de una tabla de problemas frecuentes. El **Anexo B** mapea cada requisito de la
+consigna con su evidencia y el **Anexo C** indexa las 27 capturas.
+
+Resumen mínimo para reproducir el entorno:
+
+```bash
+minikube start --driver=docker --cpus=4 --memory=6144
+minikube addons enable metrics-server
+docker build -t udla-web:1.0 -f app/Dockerfile app
+minikube image load udla-web:1.0
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
+kubectl apply -f argocd/application.yml
+kubectl get applications -n argocd
+kubectl get all -n streetwear-lab
+minikube service streetwear-web -n streetwear-lab --url
+```
 
 ## 12. Conclusiones
 
